@@ -1,0 +1,20 @@
+# 依存・ビルド成果物
+node_modules/
+dist/
+
+# ログイン済みChromeセッション（機密・絶対に上げない）
+chrome-profile/
+
+# ユーザー個別の実設定（取引先名・コード等を含むためコミットしない）
+config.json
+
+# デバッグ用スクショ（実勤怠データを含む可能性）
+*.png
+
+# OS / エディタ
+.DS_Store
+*.log
+
+# ルート直下の重複traineddata（正は ocr/tessdata/ 配下）
+/jpn.traineddata
+/eng.traineddata

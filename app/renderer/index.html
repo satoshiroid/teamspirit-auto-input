@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<title>TeamSpirit 自動入力</title>
+<style>
+  :root { --bg:#0b66c3; --bg2:#0a4f97; --ok:#1a7f37; --bd:#d0d7de; --mut:#57606a; }
+  * { box-sizing: border-box; font-family: "Hiragino Sans", "Yu Gothic UI", system-ui, sans-serif; }
+  body { margin:0; background:#f6f8fa; color:#1f2328; }
+  header { background:var(--bg); color:#fff; padding:12px 18px; display:flex; align-items:center; gap:12px; }
+  header h1 { font-size:16px; margin:0; }
+  #status { margin-left:auto; font-size:13px; }
+  .dot { display:inline-block; width:9px; height:9px; border-radius:50%; background:#bbb; margin-right:5px; }
+  .dot.on { background:#2ea043; }
+  main { padding:20px; max-width:900px; margin:0 auto; }
+  .card { background:#fff; border:1px solid var(--bd); border-radius:10px; padding:18px; margin-bottom:16px; }
+  button { background:var(--bg); color:#fff; border:0; border-radius:7px; padding:10px 16px; font-size:14px; cursor:pointer; }
+  button:hover { background:var(--bg2); }
+  button.sec { background:#eef1f4; color:#1f2328; border:1px solid var(--bd); }
+  button.sec:hover { background:#e3e8ee; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  .big { font-size:16px; padding:14px 22px; }
+  label { font-size:13px; color:var(--mut); display:block; margin:10px 0 4px; }
+  input, select { padding:8px 10px; border:1px solid var(--bd); border-radius:6px; font-size:14px; width:100%; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px 18px; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { border:1px solid var(--bd); padding:6px 8px; text-align:center; }
+  th { background:#f0f3f6; }
+  td input { width:90px; text-align:center; }
+  .hidden { display:none; }
+  #log { background:#0d1117; color:#c9d1d9; font-family:ui-monospace,monospace; font-size:12px; padding:12px; border-radius:8px; height:240px; overflow:auto; white-space:pre-wrap; }
+  .hint { font-size:12px; color:var(--mut); margin-top:6px; }
+  h2 { font-size:15px; margin:0 0 12px; }
+  .imgprev { max-width:100%; max-height:240px; border:1px solid var(--bd); border-radius:6px; margin-top:10px; }
+  .pbar { height:6px; background:#e3e8ee; border-radius:4px; overflow:hidden; }
+  .pbar > div { height:100%; width:28%; background:var(--bg); border-radius:4px; animation:indet 1.1s infinite ease-in-out; }
+  @keyframes indet { 0%{transform:translateX(-110%)} 100%{transform:translateX(380%)} }
+</style>
+</head>
+<body>
+<header>
+  <h1>TeamSpirit 勤怠・工数 自動入力</h1>
+  <div id="status"><span class="dot" id="dot"></span><span id="statusText">未起動</span></div>
+</header>
+<main>
+
+  <section id="view-main">
+    <div class="card">
+      <h2>① ツールを起動</h2>
+      <p class="hint">専用ブラウザを起動します。初回はそのウィンドウで TeamSpirit にログインしてください（次回以降は不要）。</p>
+      <div class="row"><button id="btnLaunch" class="big">ツール起動</button>
+        <button class="sec" id="btnRecheck">ログイン状態を再確認</button></div>
+    </div>
+    <div class="card">
+      <h2>② メニュー</h2>
+      <div class="row">
+        <button class="big" id="btnSettings">⚙ 設定</button>
+        <button class="big" id="btnAuto">▶ 勤怠自動入力</button>
+      </div>
+      <p class="hint">設定: 工数明細など出退勤以外の入力項目を登録します（初回に一度）。</p>
+    </div>
+  </section>
+
+  <section id="view-settings" class="hidden">
+    <div class="card">
+      <h2>設定（出退勤時間以外の入力項目）</h2>
+      <div class="row" style="margin-bottom:10px">
+        <button class="sec" id="btnFetch">TeamSpiritの入力値から取得</button>
+        <button class="sec" id="btnDefault">既定値に戻す</button>
+      </div>
+      <label>主ジョブ（工数を入れる対象。名前の一部でOK）</label>
+      <input id="jobMatch" />
+      <div class="grid2">
+        <div><label>製品分野（コード）</label><input data-fav="製品分野" /></div>
+        <div><label>業務区分</label><input data-fav="業務区分" /></div>
+        <div><label>業務種別_技術要素１</label><input data-fav="業務種別_技術要素１" /></div>
+        <div><label>業務種別_技術要素２</label><input data-fav="業務種別_技術要素２" /></div>
+        <div><label>業務種別_技術要素3</label><input data-fav="業務種別_技術要素3" /></div>
+        <div><label>アウトプット名称</label><input data-fav="アウトプット名称" /></div>
+        <div><label>知識</label>
+          <select data-pk="知識"><option value=""></option><option>S</option><option>A</option><option>B</option><option>C</option><option>D</option><option>Z</option></select></div>
+        <div><label>技能</label>
+          <select data-pk="技能"><option value=""></option><option>S</option><option>A</option><option>B</option><option>C</option><option>D</option><option>Z</option></select></div>
+        <div><label>勤務場所</label>
+          <select id="kinmuBasho"><option>出社</option><option>在宅：客先業務</option><option>在宅：社内業務のみ</option><option>その他</option></select></div>
+        <div><label>業務内容</label><input id="gyomuNaiyo" /></div>
+      </div>
+      <p class="hint">※ コードは TeamSpirit の「お気に入り」に登録済みのものを指定してください。</p>
+      <div class="row" style="margin-top:14px">
+        <button id="btnSave">保存</button>
+        <button class="sec" id="btnBack1">戻る</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="view-auto" class="hidden">
+    <div class="card">
+      <h2>勤怠自動入力</h2>
+      <div class="row">
+        <label style="margin:0">対象年月</label>
+        <input id="ym" type="month" style="width:160px" />
+        <button class="sec" id="btnPick">画像を選択</button>
+        <button class="sec" id="btnOcr" disabled>OCRで読み取り</button>
+        <button class="sec" id="btnManual">OCRなしで手入力</button>
+      </div>
+      <img id="imgPrev" class="imgprev hidden" />
+      <p class="hint">別の勤怠システムの画面スクショを選び、「OCRで読み取り」を押すと日付・出退勤を抽出します。</p>
+      <div id="ocrProgress" class="hidden" style="margin-top:12px">
+        <div class="pbar"><div></div></div>
+        <div class="hint" id="ocrStage">処理中…</div>
+      </div>
+    </div>
+
+    <div class="card hidden" id="confirmCard">
+      <h2>確認（修正できます）</h2>
+      <table id="tbl"><thead><tr><th>日</th><th>出勤</th><th>退勤</th><th></th></tr></thead><tbody></tbody></table>
+      <div class="row" style="margin-top:10px">
+        <button class="sec" id="btnAddRow">＋行追加</button>
+        <button id="btnStart">この内容で入力開始</button>
+        <button class="sec" id="btnBack2">戻る</button>
+      </div>
+      <p class="hint">※ TeamSpirit 側で対象年月の勤務表を表示しておいてください。申請・月次確定は自動化しません（手動）。</p>
+    </div>
+
+    <div class="card hidden" id="logCard">
+      <h2>実行ログ</h2>
+      <div id="log"></div>
+    </div>
+  </section>
+
+</main>
+<script src="renderer.js"></script>
+</body>
+</html>

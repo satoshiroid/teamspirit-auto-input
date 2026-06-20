@@ -1,0 +1,5 @@
+# 高精度ローカルOCR（推奨）
+easyocr
+# フォールバック（任意。tesseract本体のインストールも必要）
+# pytesseract
+# Pillow

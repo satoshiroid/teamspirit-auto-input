@@ -1,0 +1,44 @@
+{
+  "name": "teamspirit-auto-input",
+  "version": "0.1.0",
+  "description": "TeamSpirit 勤怠・工数 自動入力アプリ",
+  "main": "app/main.js",
+  "scripts": {
+    "start": "electron .",
+    "run-cli": "node run.js",
+    "dist:mac": "electron-builder --mac zip",
+    "dist:win": "electron-builder --win zip"
+  },
+  "dependencies": {
+    "playwright": "^1.61.0",
+    "tesseract.js": "^7.0.0"
+  },
+  "devDependencies": {
+    "electron": "^42.4.1",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.meitec.teamspirit-auto-input",
+    "productName": "TeamSpirit自動入力",
+    "files": [
+      "app/**/*",
+      "automation.js",
+      "ocr-node.js",
+      "default-config.json",
+      "node_modules/**/*"
+    ],
+    "extraResources": [
+      "ocr/**/*"
+    ],
+    "asarUnpack": [
+      "node_modules/tesseract.js/**",
+      "node_modules/tesseract.js-core/**"
+    ],
+    "mac": {
+      "target": "zip"
+    },
+    "win": {
+      "target": "zip"
+    }
+  }
+}
