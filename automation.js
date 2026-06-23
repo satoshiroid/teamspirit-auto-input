@@ -134,7 +134,7 @@ async function pickFavorite(frame, key, code, log) {
   log(`    ${key}=${code}`);
 }
 
-async function doKousu(frame, row, day, cfg, log) {
+async function doKousu(frame, page, row, day, cfg, log) {
   await row.locator('[data-testid="timesheet-pc__daily-summary-button"]').click({ timeout: 6000 });
   await sleep(3500);
   const jobSel = ['[class*="TaskRowWrapper"]', { hasText: cfg.kousu.jobMatch }];
@@ -167,36 +167,61 @@ async function doKousu(frame, row, day, cfg, log) {
   if ((!kousu || !/\d/.test(String(kousu))) && day.start && day.end) {
     kousu = computeWork(day.start, day.end, cfg.constants && cfg.constants.breakDefault);
   }
-  const setTime = async () => {
+  // 工数実績の入力。React制御のComboboxはfillでstateに反映されない端末があるため、
+  // 1文字ずつ入力(pressSequentially)→Tab確定し、値を検証する。fillはフォールバック。
+  const expected = normTime(kousu);
+  const setTime = async (mode) => {
     const t = frame.locator(...jobSel).first().locator('[class*="Combobox__Input"]').first();
     await t.scrollIntoViewIfNeeded({ timeout: 5000 }).catch(() => {});
     await t.click({ timeout: 5000 }).catch(() => {});
+    // 既存値をクリア（全選択→削除。fill('')だけだと残る端末対策）
+    await t.press('Control+a').catch(() => {});
+    await t.press('Meta+a').catch(() => {});
+    await t.press('Delete').catch(() => {});
     await t.fill('').catch(() => {});
-    await t.fill(String(kousu)).catch(() => {});
+    if (mode === 'type') {
+      await t.pressSequentially(String(expected), { delay: 60 }).catch(() => {});
+    } else {
+      await t.fill(String(expected)).catch(() => {});
+    }
     await t.press('Tab').catch(() => {});
     await sleep(700);
     return await t.inputValue().catch(() => '');
   };
-  if (!kousu || !/\d/.test(String(kousu))) {
+  const isOk = v => /\d/.test(v) && v !== '00:00';
+  let reflected = '';
+  if (!expected || !/\d/.test(String(expected))) {
     log('    工数実績の時間を特定できずスキップ（手動で確認してください）');
   } else {
-    let v = '';
-    for (let i = 0; i < 3; i++) { v = await setTime(); if (/\d/.test(v) && v !== '00:00') break; }
-    log(`    工数実績=${kousu} (反映=${v})`);
+    // typeを優先し、ダメならfillで再試行（最大5回）
+    for (let i = 0; i < 5; i++) {
+      reflected = await setTime(i < 3 ? 'type' : 'fill');
+      log(`    工数実績入力 試行${i + 1}: 期待=${expected} 反映=${reflected}`);
+      if (isOk(reflected)) break;
+    }
+    if (!isOk(reflected)) log('    ⚠ 工数実績が反映されていません（保存時に警告が出る可能性）');
   }
   // 保存して閉じる。「作業時間が登録されていない」警告が出たらキャンセルして時間を入れ直す
-  for (let attempt = 0; attempt < 3; attempt++) {
+  let saved = false;
+  for (let attempt = 0; attempt < 4; attempt++) {
     await frame.locator('button:has-text("保存して閉じる")').last().click({ timeout: 6000 }).catch(() => {});
-    await sleep(1600);
+    await sleep(1800);
     const warn = frame.getByText('作業時間が登録されていない', { exact: false });
-    if (!(await warn.count())) break;
-    log('    警告「作業時間未登録」→ キャンセルして工数実績を再入力');
+    if (!(await warn.count())) { saved = true; break; }
+    log(`    警告「作業時間未登録」(${attempt + 1}回目)→ キャンセルして工数実績を再入力`);
     await frame.locator('button:has-text("キャンセル")').last().click({ timeout: 3000 }).catch(() => {});
-    await sleep(900);
-    if (kousu && /\d/.test(String(kousu))) await setTime();
+    await sleep(1000);
+    if (expected && /\d/.test(String(expected))) {
+      reflected = await setTime(attempt % 2 === 0 ? 'type' : 'fill');
+      log(`      再入力 反映=${reflected}`);
+    }
+  }
+  if (!saved) {
+    log('    ⚠ 工数実績を保存できませんでした。ダイアログを閉じます（この日は手動で工数を入力してください）');
+    await cleanupAll(frame, page);
   }
   await sleep(1500);
-  log('  工数 保存');
+  log(saved ? '  工数 保存' : '  工数 未保存（要手動）');
 }
 
 async function doRowFields(frame, page, row, cfg, log) {
@@ -231,7 +256,7 @@ async function processDays(page, days, cfg, log) {
     let ok = true;
     try { await doAttendance(frame, row, day, log); } catch (e) { log('  出退勤ERR ' + e.message); await cleanupAll(frame, page); ok = false; }
     row = await findRow(frame, dayNum);
-    try { await doKousu(frame, row, day, cfg, log); } catch (e) { log('  工数ERR ' + e.message); await cleanupAll(frame, page); ok = false; }
+    try { await doKousu(frame, page, row, day, cfg, log); } catch (e) { log('  工数ERR ' + e.message); await cleanupAll(frame, page); ok = false; }
     row = await findRow(frame, dayNum);
     try { await doRowFields(frame, page, row, cfg, log); } catch (e) { log('  行入力ERR ' + e.message); await cleanupAll(frame, page); ok = false; }
     results.push({ date: day.date, ok });
