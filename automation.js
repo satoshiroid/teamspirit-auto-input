@@ -14,13 +14,15 @@ function normTime(s) {
 }
 function toMin(t) { const m = /^(\d{1,2}):(\d{2})$/.exec(normTime(t)); return m ? (+m[1]) * 60 + (+m[2]) : null; }
 function computeWork(start, end, brk) {
-  const s = toMin(start), e = toMin(end);
-  if (s == null || e == null) return '';
-  let work = e - s;
-  if (work < 0) work += 24 * 60;
-  let bmin = 60;
-  if (brk) { const bs = toMin(brk.start), be = toMin(brk.end); if (bs != null && be != null) bmin = Math.max(0, be - bs); }
-  work = Math.max(0, work - bmin);
+  const s = toMin(start), e0 = toMin(end);
+  if (s == null || e0 == null) return '';
+  let e = e0; if (e < s) e += 24 * 60;
+  // 休憩は「勤務時間と休憩枠(既定12:00-13:00)の重なり分」だけ控除する。
+  // TeamSpiritの実労働時間と一致（半日勤務で休憩枠に一部しか掛からない場合も正しく算出）。
+  let bs = 12 * 60, be = 13 * 60;
+  if (brk) { const a = toMin(brk.start), b = toMin(brk.end); if (a != null && b != null) { bs = a; be = b; } }
+  const overlap = Math.max(0, Math.min(e, be) - Math.max(s, bs));
+  const work = Math.max(0, (e - s) - overlap);
   return String(Math.floor(work / 60)).padStart(2, '0') + ':' + String(work % 60).padStart(2, '0');
 }
 
@@ -159,13 +161,16 @@ async function doKousu(frame, page, row, day, cfg, log) {
     const v = pk[pkKeys[i]];
     if (v) { await sel.nth(i).selectOption(v).catch(() => {}); log(`    ${pkKeys[i]}=${v}`); }
   }
+  // 工数実績＝実労働時間。start/endから決定的に算出（休憩枠との重なり控除）するのを主軸とする。
+  // 旧来の「画面の実労働時間をbody全体からスクレイプ」は誤った値(所定08:00等)を拾う事故があったため
+  // start/endが無い場合の最終フォールバックに格下げ。
   let kousu = day.kousu;
+  if ((!kousu || !/\d/.test(String(kousu))) && day.start && day.end) {
+    kousu = computeWork(day.start, day.end, cfg.constants && cfg.constants.breakDefault);
+  }
   if (!kousu || !/\d/.test(String(kousu))) {
     const m = await frame.evaluate(() => { const w = document.body.innerText.match(/実労働時間[^\d]*(\d{1,2}:\d{2})/); return w ? w[1] : ''; }).catch(() => '');
     if (m && /\d/.test(m)) kousu = m;
-  }
-  if ((!kousu || !/\d/.test(String(kousu))) && day.start && day.end) {
-    kousu = computeWork(day.start, day.end, cfg.constants && cfg.constants.breakDefault);
   }
   // 工数実績の入力。React制御のComboboxはfillでstateに反映されない端末があるため、
   // 1文字ずつ入力(pressSequentially)→Tab確定し、値を検証する。fillはフォールバック。
