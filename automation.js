@@ -286,7 +286,11 @@ async function readCurrentSettings(page, cfg, log = () => {}) {
     await cleanupAll(frame, page);
     if (cells.some(c => /\d{6}/.test(c))) {
       const codes = cells.map(c => (c.match(/(\d{6})/) || [])[1] || '');
-      return { jobText, codes, selects };
+      // 行レベルの勤務場所・業務内容も取得（工数ダイアログ外＝日次行にある）
+      const base = '.timesheet-pc-main-content-timesheet-display-field-layout-item-row';
+      const gyomuNaiyo = await r.locator(`${base}__text input`).first().inputValue().catch(() => '');
+      const kinmuBasho = (await r.locator(`${base}__dropdown [class*="DropdownButton__Button"]`).first().innerText().catch(() => '')).trim().split('\n')[0].trim();
+      return { jobText, codes, selects, kinmuBasho, gyomuNaiyo };
     }
   }
   return null;

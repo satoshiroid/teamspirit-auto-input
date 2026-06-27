@@ -61,7 +61,9 @@ $("#btnFetch").onclick = async () => {
       if(r.jobText){ const m=r.jobText.split(/\s+/).find(p=>/^\d{5,}_/.test(p)); if(m) $("#jobMatch").value=m; }
       FAV_KEYS.forEach((k,i)=>{ const el=$(`[data-fav="${k}"]`); if(el && r.codes[i]) el.value=r.codes[i]; });
       const pks=$$("[data-pk]"); (r.selects||[]).forEach((v,i)=>{ if(pks[i]&&v) pks[i].value=v; });
-      alert("TeamSpiritから取得しました（実際の入力値）:\n\n対象ジョブ: "+(r.jobText||"-")+"\nコード: "+(r.codes||[]).filter(Boolean).join(" / ")+"\n知識・技能: "+((r.selects||[]).filter(Boolean).join(" / ")||"-")+"\n\n↑この値で設定欄を更新しました。確認して『保存』してください。");
+      if(r.kinmuBasho) $("#kinmuBasho").value = r.kinmuBasho;
+      if(r.gyomuNaiyo) $("#gyomuNaiyo").value = r.gyomuNaiyo;
+      alert("TeamSpiritから取得しました（実際の入力値）:\n\n対象ジョブ: "+(r.jobText||"-")+"\nコード: "+(r.codes||[]).filter(Boolean).join(" / ")+"\n知識・技能: "+((r.selects||[]).filter(Boolean).join(" / ")||"-")+"\n勤務場所: "+(r.kinmuBasho||"-")+"\n業務内容: "+(r.gyomuNaiyo||"-")+"\n\n↑この値で設定欄を更新しました。確認して『保存』してください。");
     }
   } catch(e){ alert("取得失敗: "+e.message); }
   $("#btnFetch").textContent = old; $("#btnFetch").disabled = false;
