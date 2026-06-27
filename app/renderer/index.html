@@ -70,23 +70,23 @@
         <button class="sec" id="btnDefault">既定値に戻す</button>
       </div>
       <label>主ジョブ（工数を入れる対象。名前の一部でOK）</label>
-      <input id="jobMatch" />
+      <input id="jobMatch" placeholder="例: 12345678_客先業務（ジョブ名の一部）" />
       <div class="grid2">
-        <div><label>製品分野（コード）</label><input data-fav="製品分野" /></div>
-        <div><label>業務区分</label><input data-fav="業務区分" /></div>
-        <div><label>業務種別_技術要素１</label><input data-fav="業務種別_技術要素１" /></div>
-        <div><label>業務種別_技術要素２</label><input data-fav="業務種別_技術要素２" /></div>
-        <div><label>業務種別_技術要素3</label><input data-fav="業務種別_技術要素3" /></div>
-        <div><label>アウトプット名称</label><input data-fav="アウトプット名称" /></div>
+        <div><label>製品分野（コード）</label><input data-fav="製品分野" placeholder="お気に入りの6桁コード（例: 631002）" /></div>
+        <div><label>業務区分</label><input data-fav="業務区分" placeholder="お気に入りの6桁コード（例: 513007）" /></div>
+        <div><label>業務種別_技術要素１</label><input data-fav="業務種別_技術要素１" placeholder="お気に入りの6桁コード" /></div>
+        <div><label>業務種別_技術要素２</label><input data-fav="業務種別_技術要素２" placeholder="お気に入りの6桁コード" /></div>
+        <div><label>業務種別_技術要素3</label><input data-fav="業務種別_技術要素3" placeholder="お気に入りの6桁コード" /></div>
+        <div><label>アウトプット名称</label><input data-fav="アウトプット名称" placeholder="お気に入りの6桁コード" /></div>
         <div><label>知識</label>
-          <select data-pk="知識"><option value=""></option><option>S</option><option>A</option><option>B</option><option>C</option><option>D</option><option>Z</option></select></div>
+          <select data-pk="知識"><option value="">（選択してください）</option><option>S</option><option>A</option><option>B</option><option>C</option><option>D</option><option>Z</option></select></div>
         <div><label>技能</label>
-          <select data-pk="技能"><option value=""></option><option>S</option><option>A</option><option>B</option><option>C</option><option>D</option><option>Z</option></select></div>
+          <select data-pk="技能"><option value="">（選択してください）</option><option>S</option><option>A</option><option>B</option><option>C</option><option>D</option><option>Z</option></select></div>
         <div><label>勤務場所</label>
-          <select id="kinmuBasho"><option>出社</option><option>在宅：客先業務</option><option>在宅：社内業務のみ</option><option>その他</option></select></div>
-        <div><label>業務内容</label><input id="gyomuNaiyo" /></div>
+          <select id="kinmuBasho"><option value="">（選択してください）</option><option>出社</option><option>在宅：客先業務</option><option>在宅：社内業務のみ</option><option>その他</option></select></div>
+        <div><label>業務内容</label><input id="gyomuNaiyo" placeholder="例: ○○の設計・開発" /></div>
       </div>
-      <p class="hint">※ コードは TeamSpirit の「お気に入り」に登録済みのものを指定してください。</p>
+      <p class="hint">※ コードは TeamSpirit の「お気に入り」に登録済みのものを指定してください。すべて入力しないと保存できません。<br>※ 自分の入力済みの値がある場合は「TeamSpiritの入力値から取得」で自動入力できます。</p>
       <div class="row" style="margin-top:14px">
         <button id="btnSave">保存</button>
         <button class="sec" id="btnBack1">戻る</button>

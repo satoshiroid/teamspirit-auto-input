@@ -26,7 +26,7 @@ function fillForm(cfg){
   $("#jobMatch").value = cfg.kousu?.jobMatch || "";
   FAV_KEYS.forEach(k => { const el = $(`[data-fav="${k}"]`); if(el) el.value = (cfg.kousu?.favorites||{})[k] || ""; });
   $$("[data-pk]").forEach(el => el.value = (cfg.kousu?.picklists||{})[el.dataset.pk] || "");
-  $("#kinmuBasho").value = cfg.constants?.kinmuBasho || "出社";
+  $("#kinmuBasho").value = cfg.constants?.kinmuBasho || "";
   $("#gyomuNaiyo").value = cfg.constants?.gyomuNaiyo || "";
 }
 async function loadSettings(){ fillForm(await api.getConfig()); }
