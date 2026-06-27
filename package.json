@@ -1,6 +1,6 @@
 {
   "name": "teamspirit-auto-input",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "TeamSpirit 勤怠・工数 自動入力アプリ",
   "main": "app/main.js",
   "scripts": {
