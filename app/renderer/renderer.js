@@ -1,4 +1,12 @@
 const FAV_KEYS = ["製品分野","業務区分","業務種別_技術要素１","業務種別_技術要素２","業務種別_技術要素3","アウトプット名称"];
+// 社内業務ジョブ（TeamSpiritに割当済み）。match=ダイアログ内でジョブ行を特定する識別文字列。
+const SHANAI_JOBS = [
+  { label: "労務懇談会", match: "社内業務_労務懇談会" },
+  { label: "定期健康診断", match: "社内業務_定期健康診断" },
+  { label: "代表者連絡会", match: "社内業務_代表者連絡会" },
+  { label: "客先所定内移動時間", match: "客先所定内移動時間" },
+  { label: "個人面談", match: "社内業務_個人面談" },
+];
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const show = id => { ["view-main","view-settings","view-auto"].forEach(v=>$("#"+v).classList.toggle("hidden", v!==id)); };
@@ -75,6 +83,7 @@ function initAuto(){
   pickedImage = null; $("#imgPrev").classList.add("hidden"); $("#btnOcr").disabled = true;
   $("#confirmCard").classList.add("hidden"); $("#logCard").classList.add("hidden");
   $("#tbl tbody").innerHTML = "";
+  $("#shanaiTbl tbody").innerHTML = "";
 }
 $("#btnPick").onclick = async () => {
   const p = await api.pickImage(); if(!p) return;
@@ -123,6 +132,21 @@ function addRow(day="", start="", end=""){
 }
 function renderConfirm(days){ $("#tbl tbody").innerHTML=""; days.forEach(d=>addRow(d.day??d.date, d.start, d.end)); if(!days.length) addRow(); }
 $("#btnAddRow").onclick = () => addRow();
+function addShanaiRow(day="", match="", start="", end=""){
+  const tr=document.createElement("tr");
+  const opts = SHANAI_JOBS.map(j=>`<option value="${j.match}"${j.match===match?" selected":""}>${j.label}</option>`).join("");
+  tr.innerHTML = `<td><input class="sd" value="${day}" placeholder="日"></td>`+
+    `<td><select class="sj"><option value="">（選択）</option>${opts}</select></td>`+
+    `<td><input class="ss" value="${start}" placeholder="HH:MM"></td>`+
+    `<td><input class="se2" value="${end}" placeholder="HH:MM"></td>`+
+    `<td><button class="sec del">×</button></td>`;
+  tr.querySelector(".del").onclick=()=>tr.remove();
+  const fmt = el => el.addEventListener('blur', ()=>{ el.value = normTimeR(el.value); });
+  fmt(tr.querySelector(".ss")); fmt(tr.querySelector(".se2"));
+  tr.querySelector(".sj").style.width="100%"; tr.querySelector(".ss").style.width="90px"; tr.querySelector(".se2").style.width="90px";
+  $("#shanaiTbl tbody").appendChild(tr);
+}
+$("#btnAddShanai").onclick = () => addShanaiRow();
 $("#btnManual").onclick = () => { $("#tbl tbody").innerHTML=""; for(let i=0;i<3;i++) addRow(); $("#confirmCard").classList.remove("hidden"); };
 $("#btnStart").onclick = async () => {
   const ym = $("#ym").value;
@@ -132,7 +156,29 @@ $("#btnStart").onclick = async () => {
     return { date: `${ym}-${pad(parseInt(day,10))}`, start: tr.querySelector(".s").value.trim(), end: tr.querySelector(".e").value.trim() };
   }).filter(d=>d.start && d.end && !isNaN(parseInt(d.date.slice(-2),10)));
   if(!days.length){ alert("有効な行がありません"); return; }
-  if(!confirm(`${days.length}日分を TeamSpirit に入力します。よろしいですか？`)) return;
+
+  // 社内業務を該当日に紐付け（日番号でマッチ）
+  const byNum = {}; days.forEach(d=>{ byNum[parseInt(d.date.slice(-2),10)] = d; });
+  const shanaiErr = [];
+  let shanaiCount = 0;
+  $$("#shanaiTbl tbody tr").forEach(tr=>{
+    const dn = parseInt(tr.querySelector(".sd").value.trim(),10);
+    const job = tr.querySelector(".sj").value;
+    const start = normTimeR(tr.querySelector(".ss").value.trim());
+    const end = normTimeR(tr.querySelector(".se2").value.trim());
+    if(!dn && !job && !start && !end) return; // 空行
+    if(!dn || !job || !start || !end){ shanaiErr.push(`・${tr.querySelector(".sd").value||"?"}日: 種別・開始・終了をすべて入力してください`); return; }
+    const d = byNum[dn];
+    if(!d){ shanaiErr.push(`・${dn}日: 上の確認表に同じ日がありません（先に客先の出退勤を入れてください）`); return; }
+    (d.shanai = d.shanai || []).push({ job, start, end });
+    shanaiCount++;
+  });
+  if(shanaiErr.length){ alert("社内業務の入力に問題があります:\n\n"+shanaiErr.join("\n")); return; }
+
+  const msg = shanaiCount
+    ? `${days.length}日分（うち社内業務 ${shanaiCount}件）を TeamSpirit に入力します。よろしいですか？`
+    : `${days.length}日分を TeamSpirit に入力します。よろしいですか？`;
+  if(!confirm(msg)) return;
   $("#logCard").classList.remove("hidden"); $("#log").textContent=""; $("#btnStart").disabled=true;
   try { const r = await api.startRun(days); appendLog(`\n=== 結果: ${r.filter(x=>x.ok).length}/${r.length} 日 成功 ===`); }
   catch(e){ appendLog("ERROR: "+e.message); }

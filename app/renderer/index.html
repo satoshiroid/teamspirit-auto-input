@@ -119,8 +119,17 @@
 
     <div class="card hidden" id="confirmCard">
       <h2>確認（修正できます）</h2>
+      <p class="hint" style="margin-top:0">出勤・退勤は<b>客先での業務時間</b>です（OCRで取得）。</p>
       <table id="tbl"><thead><tr><th>日</th><th>出勤</th><th>退勤</th><th></th></tr></thead><tbody></tbody></table>
-      <div class="row" style="margin-top:10px">
+
+      <h2 style="margin-top:22px">社内業務（任意）</h2>
+      <p class="hint" style="margin-top:0">客先業務の後に社内業務を行った日だけ追加してください。客先退勤〜社内開始は「不就労（移動）」、退勤は社内終了に自動更新されます。</p>
+      <table id="shanaiTbl"><thead><tr><th style="width:70px">日</th><th>社内業務の種別</th><th style="width:110px">開始</th><th style="width:110px">終了</th><th style="width:44px"></th></tr></thead><tbody></tbody></table>
+      <div class="row" style="margin-top:8px">
+        <button class="sec" id="btnAddShanai">＋社内業務を追加</button>
+      </div>
+
+      <div class="row" style="margin-top:16px">
         <button class="sec" id="btnAddRow">＋行追加</button>
         <button id="btnStart">この内容で入力開始</button>
         <button class="sec" id="btnBack2">戻る</button>
