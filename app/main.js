@@ -13,6 +13,7 @@ const DEFAULT_CONFIG = path.join(__dirname, '..', 'default-config.json');
 let win = null;
 let browserCtx = null;
 let browserPage = null;
+let browserName = null;
 
 function loadConfig() {
   try { return JSON.parse(fs.readFileSync(CONFIG_PATH(), 'utf8')); }
@@ -57,14 +58,16 @@ ipcMain.handle('config:default', () => JSON.parse(fs.readFileSync(DEFAULT_CONFIG
 
 ipcMain.handle('browser:launch', async () => {
   if (!browserCtx) {
-    const r = await automation.launchBrowser(PROFILE_DIR());
-    browserCtx = r.context; browserPage = r.page;
+    const cfg = loadConfig();
+    const channels = cfg.browserChannel ? [cfg.browserChannel] : undefined; // 既定はEdge優先→Chrome
+    const r = await automation.launchBrowser(USER_DATA(), { channels });
+    browserCtx = r.context; browserPage = r.page; browserName = r.browserName;
   }
-  return await automation.isLoggedIn(browserPage);
+  return { loggedIn: await automation.isLoggedIn(browserPage), browserName };
 });
 ipcMain.handle('browser:status', async () => {
-  if (!browserPage) return { launched: false, loggedIn: false };
-  return { launched: true, loggedIn: await automation.isLoggedIn(browserPage) };
+  if (!browserPage) return { launched: false, loggedIn: false, browserName: null };
+  return { launched: true, loggedIn: await automation.isLoggedIn(browserPage), browserName };
 });
 
 ipcMain.handle('settings:fetch', async () => {

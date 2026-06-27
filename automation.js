@@ -1,5 +1,6 @@
 // TeamSpirit 自動入力コアモジュール（Electronから利用）
 const { chromium } = require('playwright');
+const path = require('path');
 
 const URL = 'https://meitecgroup.lightning.force.com/lightning/n/tex__TimeAttendance';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -26,16 +27,32 @@ function computeWork(start, end, brk) {
   return String(Math.floor(work / 60)).padStart(2, '0') + ':' + String(work % 60).padStart(2, '0');
 }
 
-async function launchBrowser(userDataDir) {
-  const context = await chromium.launchPersistentContext(userDataDir, {
-    headless: false,
-    channel: 'chrome',
-    viewport: null,
-    args: ['--start-maximized'],
-  });
-  const page = context.pages()[0] || (await context.newPage());
-  await page.goto(URL, { waitUntil: 'domcontentloaded' }).catch(() => {});
-  return { context, page };
+// ブラウザを起動する。Edge優先→Chromeにフォールバック（どちらもChromium系でPlaywrightが操作可能）。
+// Windowsには Edge が標準搭載なので、配布先で別途インストール不要。
+// プロファイルはブラウザごとに分ける（Chromeで暗号化したCookieはEdgeで復号できない等を避ける）。
+async function launchBrowser(userDataRoot, opts = {}) {
+  const channels = (opts.channels && opts.channels.length) ? opts.channels : ['msedge', 'chrome'];
+  const labels = { msedge: 'Microsoft Edge', chrome: 'Google Chrome' };
+  const tried = [];
+  let lastErr;
+  for (const channel of channels) {
+    try {
+      const profileDir = path.join(userDataRoot, channel + '-profile');
+      const context = await chromium.launchPersistentContext(profileDir, {
+        headless: false,
+        channel,
+        viewport: null,
+        args: ['--start-maximized'],
+      });
+      const page = context.pages()[0] || (await context.newPage());
+      await page.goto(URL, { waitUntil: 'domcontentloaded' }).catch(() => {});
+      return { context, page, channel, browserName: labels[channel] || channel };
+    } catch (e) {
+      tried.push(labels[channel] || channel);
+      lastErr = e;
+    }
+  }
+  throw new Error(`ブラウザを起動できませんでした（試行: ${tried.join(' → ')}）。Microsoft Edge または Google Chrome が必要です。 ${lastErr && lastErr.message ? '詳細: ' + lastErr.message : ''}`);
 }
 
 async function isLoggedIn(page) {

@@ -15,8 +15,9 @@ OCR は **tesseract.js**（純JS/WASM・**Python不要**・オフライン動作
 - 設定の保存先 … OSのユーザーデータ領域（`config.json`／リポジトリには含めない）
 
 ## 動作要件
-- 端末に **Google Chrome** がインストールされていること（Playwright が端末の Chrome を操作）。
-- パスワード等の認証情報はアプリは一切保持しません。**TeamSpirit へのログインは手動**で行います。
+- 端末に **Microsoft Edge** または **Google Chrome** がインストールされていること（Playwright が端末のブラウザを操作。Edge優先→無ければChromeに自動フォールバック。Windowsは Edge 標準搭載のため追加インストール不要）。
+- パスワード等の認証情報はアプリは一切保持しません。**TeamSpirit へのログインは手動**で行います（ブラウザごとに専用プロファイルを使うため、初回に一度だけログイン）。
+- ブラウザを固定したい場合は設定ファイル `config.json` に `"browserChannel": "msedge"`（または `"chrome"`）を指定できます。
 
 ## 開発（ソースから起動）
 ```

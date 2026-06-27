@@ -12,15 +12,16 @@ const $$ = s => [...document.querySelectorAll(s)];
 const show = id => { ["view-main","view-settings","view-auto"].forEach(v=>$("#"+v).classList.toggle("hidden", v!==id)); };
 const pad = n => String(n).padStart(2,"0");
 
-function setStatus(launched, loggedIn){
+function setStatus(launched, loggedIn, browserName){
   $("#dot").classList.toggle("on", !!loggedIn);
-  $("#statusText").textContent = !launched ? "未起動" : (loggedIn ? "ログイン済み" : "未ログイン（ブラウザでログインしてください）");
+  const b = browserName ? `（${browserName}）` : "";
+  $("#statusText").textContent = !launched ? "未起動" : (loggedIn ? "ログイン済み"+b : "未ログイン"+b+"（ブラウザでログインしてください）");
 }
-async function refreshStatus(){ const s = await api.browserStatus(); setStatus(s.launched, s.loggedIn); }
+async function refreshStatus(){ const s = await api.browserStatus(); setStatus(s.launched, s.loggedIn, s.browserName); }
 
 $("#btnLaunch").onclick = async () => {
   $("#btnLaunch").disabled = true; $("#statusText").textContent = "起動中…";
-  try { const loggedIn = await api.launchBrowser(); setStatus(true, loggedIn); }
+  try { const r = await api.launchBrowser(); setStatus(true, r.loggedIn, r.browserName); }
   catch(e){ alert("起動失敗: "+e.message); }
   $("#btnLaunch").disabled = false;
 };
