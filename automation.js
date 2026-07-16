@@ -197,6 +197,51 @@ async function pickFavorite(frame, key, code, log) {
   log(`    ${key}=${code}`);
 }
 
+// 主ジョブが工数一覧に無い場合「ジョブを追加」で追加する。月替わりで受注伝票（ジョブ番号）が
+// 変わった場合は、カテゴリ内の唯一の候補を自動選択して使う（実際に使ったジョブ名を返す）。
+async function ensureJobRow(frame, jobMatch, log) {
+  const row = frame.locator('[class*="TaskRowWrapper"]', { hasText: jobMatch }).first();
+  try { await row.waitFor({ state: 'visible', timeout: 8000 }); return jobMatch; } catch (e) {}
+  log(`    ジョブ「${jobMatch}」が一覧に無いため「ジョブを追加」から追加します`);
+  await frame.getByText('ジョブを追加', { exact: true }).last().click({ timeout: 5000 });
+  await sleep(3000);
+  const dlg = frame.locator('[class*="ModalDialog__Dialog"]').last();
+  const search = dlg.locator('input').first();
+  // 検索はカテゴリ名単位（例: 44866719_客先業務 → 「客先業務」）。ヒットしなければ既定カテゴリで再検索。
+  const term = String(jobMatch).replace(/[\d_\-]+/g, ' ').trim().split(/\s+/)[0] || String(jobMatch);
+  const searchTerms = [...new Set([term, '客先業務'])];
+  let cands = [];
+  for (const q of searchTerms) {
+    await search.fill('').catch(() => {});
+    await search.fill(q).catch(() => {});
+    await search.press('Enter').catch(() => {});
+    await sleep(2000);
+    await dlg.getByText(q, { exact: true }).last().click({ timeout: 4000 }).catch(() => {}); // カテゴリ展開
+    await sleep(2000);
+    cands = await dlg.evaluate(el => {
+      const out = []; el.querySelectorAll('*').forEach(n => { if (n.children.length === 0) { const t = (n.textContent || '').replace(/\s+/g, ' ').trim(); if (/^\d{6,}_/.test(t)) out.push(t); } }); return [...new Set(out)];
+    }).catch(() => []);
+    if (cands.length) break;
+  }
+  let chosen = cands.find(c => c.includes(jobMatch) || jobMatch.includes(c));
+  if (!chosen) {
+    if (cands.length === 1) {
+      chosen = cands[0];
+      log(`    ⚠ 設定の主ジョブと一致せず、唯一の候補「${chosen}」を使用します（月替わりでジョブ番号が変わった可能性。設定画面の主ジョブを更新してください）`);
+    } else {
+      await dlg.locator('button:has-text("キャンセル")').last().click({ timeout: 3000 }).catch(() => {});
+      throw new Error(`ジョブ「${jobMatch}」が見つかりません。候補: ${cands.join(' / ') || 'なし'}（設定画面の主ジョブを更新してください）`);
+    }
+  }
+  await dlg.getByText(chosen, { exact: true }).first().click({ timeout: 4000 });
+  await sleep(600);
+  await dlg.locator('button:has-text("決定")').last().click({ timeout: 4000 });
+  await sleep(2500);
+  await frame.locator('[class*="TaskRowWrapper"]', { hasText: chosen }).first().waitFor({ state: 'visible', timeout: 8000 });
+  log(`    ジョブ「${chosen}」を追加しました`);
+  return chosen;
+}
+
 // 社内業務ジョブの工数を「時間帯モード」で開始〜終了入力する
 async function setShanaiKousu(frame, s, log) {
   const jobRow = frame.locator('[class*="TaskRowWrapper"]', { hasText: s.job }).first();
@@ -218,8 +263,9 @@ async function setShanaiKousu(frame, s, log) {
 async function doKousu(frame, page, row, day, cfg, log) {
   await row.locator('[data-testid="timesheet-pc__daily-summary-button"]').click({ timeout: 6000 });
   await sleep(3500);
-  const jobSel = ['[class*="TaskRowWrapper"]', { hasText: cfg.kousu.jobMatch }];
-  await frame.locator(...jobSel).first().waitFor({ state: 'visible', timeout: 8000 });
+  // 主ジョブ行を確保（無ければ自動追加。月替わりの受注伝票変更にも追従）
+  const jobKey = await ensureJobRow(frame, cfg.kousu.jobMatch, log);
+  const jobSel = ['[class*="TaskRowWrapper"]', { hasText: jobKey }];
   const socials = (Array.isArray(day.shanai) ? [...day.shanai] : []).filter(s => s && s.job && s.start && s.end)
     .sort((a, b) => toMin(a.start) - toMin(b.start));
   const cellSel = '.task__extended__item-list__item.task-hierarchy .container';
