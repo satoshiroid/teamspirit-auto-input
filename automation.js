@@ -410,19 +410,23 @@ async function readCurrentSettings(page, cfg, log = () => {}) {
     if (!hasKousu) continue;
     await r.locator('[data-testid="timesheet-pc__daily-summary-button"]').click({ timeout: 6000 }).catch(() => {});
     await sleep(3500);
-    const jr = frame.locator('[class*="TaskRowWrapper"]').first();
-    const jobText = (await jr.locator('[class*="TaskRow__Job"]').first().innerText().catch(() => '')).replace(/\n/g, ' ').trim();
-    const cells = await jr.locator('.task__extended__item-list__item.task-hierarchy .container').allInnerTexts().catch(() => []);
-    const selects = await jr.evaluate(el => [...el.querySelectorAll('select')].map(s => s.value)).catch(() => []);
-    await cleanupAll(frame, page);
-    if (cells.some(c => /\d{6}/.test(c))) {
+    // 先頭行は社内業務のことがある（並び順は月により変わる）ため、
+    // 全ジョブ行を走査して「6桁コードが入っている行」＝主ジョブ行を探す。
+    const wrappers = await frame.locator('[class*="TaskRowWrapper"]').all();
+    for (const jr of wrappers) {
+      const cells = await jr.locator('.task__extended__item-list__item.task-hierarchy .container').allInnerTexts().catch(() => []);
+      if (!cells.some(c => /\d{6}/.test(c))) continue;
+      const jobText = (await jr.locator('[class*="TaskRow__Job"]').first().innerText().catch(() => '')).replace(/\n/g, ' ').trim();
+      const selects = await jr.evaluate(el => [...el.querySelectorAll('select')].map(s => s.value)).catch(() => []);
       const codes = cells.map(c => (c.match(/(\d{6})/) || [])[1] || '');
       // 行レベルの勤務場所・業務内容も取得（工数ダイアログ外＝日次行にある）
       const base = '.timesheet-pc-main-content-timesheet-display-field-layout-item-row';
       const gyomuNaiyo = await r.locator(`${base}__text input`).first().inputValue().catch(() => '');
       const kinmuBasho = (await r.locator(`${base}__dropdown [class*="DropdownButton__Button"]`).first().innerText().catch(() => '')).trim().split('\n')[0].trim();
+      await cleanupAll(frame, page);
       return { jobText, codes, selects, kinmuBasho, gyomuNaiyo };
     }
+    await cleanupAll(frame, page);
   }
   return null;
 }
