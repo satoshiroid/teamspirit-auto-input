@@ -311,11 +311,18 @@ async function ensureJobRow(frame, jobMatch, log) {
   return chosen;
 }
 
-// 社内業務ジョブの工数を「時間帯モード」で開始〜終了入力する
+// 社内業務ジョブの工数を「時間帯モード」で開始〜終了入力する（入力済みなら保持）
 async function setShanaiKousu(frame, s, log) {
   const jobRow = frame.locator('[class*="TaskRowWrapper"]', { hasText: s.job }).first();
   if (!(await jobRow.count())) { log(`    社内業務「${s.job}」の行が見つかりません（スキップ）`); return; }
   await jobRow.scrollIntoViewIfNeeded({ timeout: 4000 }).catch(() => {});
+  // 既入力の保持: 時間帯が両方入っていれば触らない
+  const cur = jobRow.locator('input.commons-fields-att-time-field');
+  if (await cur.count() >= 2) {
+    const v0 = await cur.nth(0).inputValue().catch(() => '');
+    const v1 = await cur.nth(1).inputValue().catch(() => '');
+    if (/\d/.test(v0) && /\d/.test(v1)) { log(`    社内業務「${s.job}」は入力済み（保持: ${v0}-${v1}）`); return; }
+  }
   // 時間帯モード（ToggleSwitchTripleButton の左ボタン）に切替
   const modeBtns = jobRow.locator('[class*="ToggleSwitchTripleButton__Button"]');
   if (await modeBtns.count()) { await modeBtns.nth(0).click({ timeout: 4000 }).catch(() => {}); await sleep(700); }
@@ -330,10 +337,28 @@ async function setShanaiKousu(frame, s, log) {
 }
 
 async function doKousu(frame, page, row, day, cfg, log) {
-  // 既入力の保持: 工数実績が既に入っている日（工数リンクに時間表示あり）は触らない
+  const socialsAll = (Array.isArray(day.shanai) ? [...day.shanai] : []).filter(s => s && s.job && s.start && s.end)
+    .sort((a, b) => toMin(a.start) - toMin(b.start));
+  // 既入力の保持: 工数実績が既に入っている日（工数リンクに時間表示あり）は客先分に触らない。
+  // ただし社内業務の指定があれば、社内業務の工数だけ確認して欠けている分を追記する。
   if (await row.locator('[data-testid="timesheet-pc__daily-summary-button__task-time"]').count()) {
-    log('  工数は入力済み（保持）');
-    if (Array.isArray(day.shanai) && day.shanai.length) log('    ⚠ 社内業務の工数が未入力の場合は手動で入力してください');
+    if (!socialsAll.length) { log('  工数は入力済み（保持）'); return; }
+    log('  工数は入力済み（保持）→ 社内業務のみ確認・追記');
+    await row.locator('[data-testid="timesheet-pc__daily-summary-button"]').click({ timeout: 6000 });
+    await sleep(3500);
+    await frame.locator('[class*="TaskRowWrapper"]').first().waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
+    for (const s of socialsAll) await setShanaiKousu(frame, s, log);
+    let saved = false;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await frame.locator('button:has-text("保存して閉じる")').last().click({ timeout: 6000 }).catch(() => {});
+      await sleep(1800);
+      const warn = frame.getByText('作業時間が登録されていない', { exact: false });
+      if (!(await warn.count())) { saved = true; break; }
+      await frame.locator('button:has-text("キャンセル")').last().click({ timeout: 3000 }).catch(() => {});
+      await sleep(900);
+    }
+    if (!saved) { log('  工数 未保存（要手動確認）'); await cleanupAll(frame, page); }
+    else { await sleep(1200); log('  工数 保存（社内業務を追記）'); }
     return;
   }
   await row.locator('[data-testid="timesheet-pc__daily-summary-button"]').click({ timeout: 6000 });
@@ -346,8 +371,7 @@ async function doKousu(frame, page, row, day, cfg, log) {
     cfg.__jobMatchUpdated = true;
   }
   const jobSel = ['[class*="TaskRowWrapper"]', { hasText: jobKey }];
-  const socials = (Array.isArray(day.shanai) ? [...day.shanai] : []).filter(s => s && s.job && s.start && s.end)
-    .sort((a, b) => toMin(a.start) - toMin(b.start));
+  const socials = socialsAll;
   const cellSel = '.task__extended__item-list__item.task-hierarchy .container';
   const nCells = await frame.locator(...jobSel).first().locator(cellSel).count();
   const favs = cfg.kousu.favorites || {};
