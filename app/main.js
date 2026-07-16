@@ -104,9 +104,20 @@ ipcMain.handle('run:start', async (e, days) => {
   if (!Array.isArray(days) || days.length === 0) throw new Error('入力対象の日がありません');
   const cfg = loadConfig();
   const log = msg => send('run:log', msg);
+  // 実行中にジョブ番号の変更を検知したら設定へ自動保存（月替わりの受注伝票変更に恒久対応）
+  const persistJobMatch = () => {
+    if (cfg.__jobMatchUpdated) {
+      delete cfg.__jobMatchUpdated;
+      saveConfig(cfg);
+      log(`設定の主ジョブを「${cfg.kousu.jobMatch}」に自動更新しました`);
+    }
+  };
   try {
-    return await automation.processDays(browserPage, days, cfg, log);
+    const r = await automation.processDays(browserPage, days, cfg, log);
+    persistJobMatch();
+    return r;
   } catch (err) {
+    persistJobMatch();
     crashLog('run:start', err && err.stack ? err.stack : err);
     log('致命的エラー: ' + (err && err.message ? err.message : err));
     throw err;

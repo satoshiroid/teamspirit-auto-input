@@ -223,11 +223,17 @@ async function ensureJobRow(frame, jobMatch, log) {
     }).catch(() => []);
     if (cands.length) break;
   }
+  // 照合は多段階: ①完全/部分一致 → ②名前部分の一致（数字を除いた部分。例: 受注伝票）→ ③唯一の候補
   let chosen = cands.find(c => c.includes(jobMatch) || jobMatch.includes(c));
   if (!chosen) {
-    if (cands.length === 1) {
+    const nameOf = s => String(s).replace(/^[\d_\-]+/, '').trim();
+    const bySuffix = cands.filter(c => nameOf(jobMatch) && nameOf(c) === nameOf(jobMatch));
+    if (bySuffix.length === 1) {
+      chosen = bySuffix[0];
+      log(`    ⚠ ジョブ番号が変わっています: 「${jobMatch}」→「${chosen}」（名前が一致するため自動選択。設定も自動更新します）`);
+    } else if (cands.length === 1) {
       chosen = cands[0];
-      log(`    ⚠ 設定の主ジョブと一致せず、唯一の候補「${chosen}」を使用します（月替わりでジョブ番号が変わった可能性。設定画面の主ジョブを更新してください）`);
+      log(`    ⚠ 設定の主ジョブと一致せず、唯一の候補「${chosen}」を使用します（設定も自動更新します）`);
     } else {
       await dlg.locator('button:has-text("キャンセル")').last().click({ timeout: 3000 }).catch(() => {});
       throw new Error(`ジョブ「${jobMatch}」が見つかりません。候補: ${cands.join(' / ') || 'なし'}（設定画面の主ジョブを更新してください）`);
@@ -265,6 +271,11 @@ async function doKousu(frame, page, row, day, cfg, log) {
   await sleep(3500);
   // 主ジョブ行を確保（無ければ自動追加。月替わりの受注伝票変更にも追従）
   const jobKey = await ensureJobRow(frame, cfg.kousu.jobMatch, log);
+  if (jobKey !== cfg.kousu.jobMatch) {
+    // 以降の日は新ジョブで直接処理（追加フローの繰り返しを防止）。実行後に設定へ保存される。
+    cfg.kousu.jobMatch = jobKey;
+    cfg.__jobMatchUpdated = true;
+  }
   const jobSel = ['[class*="TaskRowWrapper"]', { hasText: jobKey }];
   const socials = (Array.isArray(day.shanai) ? [...day.shanai] : []).filter(s => s && s.job && s.start && s.end)
     .sort((a, b) => toMin(a.start) - toMin(b.start));
