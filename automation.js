@@ -124,7 +124,70 @@ async function setBreakType(dlg, frame, ddIndex, typeText) {
   await sleep(500);
 }
 
+// 勤務時間変更申請（＋ボタン→メニュー「勤務時間変更」→新規申請→申請）。申請済みならスキップ。
+// 勤務パターンはフォームの既定値（例: 6517_SFLEX）をそのまま使う。
+async function doRequest(frame, page, row, log) {
+  const btn = row.locator('button[class*="timesheet-request-button"]').first();
+  if (!(await btn.count())) { log('  申請: ＋ボタンが見つかりません（スキップ）'); return; }
+  await btn.evaluate(el => el.click());
+  // メニュー表示をポーリング（初回は描画が遅いことがある）
+  let menuItem = null;
+  for (let i = 0; i < 8; i++) {
+    await sleep(900);
+    const mi = frame.locator('[class*="daily-att-request-dialog-menu__item"]', { hasText: '勤務時間変更' });
+    if (await mi.count()) { menuItem = mi; break; }
+    if (i === 3) await btn.evaluate(el => el.click()).catch(() => {}); // 1回だけ再クリック
+  }
+  if (!menuItem) {
+    await page.keyboard.press('Escape').catch(() => {});
+    log('  申請: メニューが開けません（スキップ）');
+    return;
+  }
+  await menuItem.first().evaluate(el => el.click());
+  await sleep(2500);
+  const dlg = frame.locator('[class*="daily-att-request-dialog"]').first();
+  await dlg.waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
+  const txt = await dlg.innerText().catch(() => '');
+  if (/申請済み/.test(txt)) {
+    log('  勤務時間変更: 申請済み（保持）');
+    await dlg.locator('button:has-text("キャンセル")').last().click({ timeout: 3000 }).catch(() => {});
+    await sleep(800);
+    return;
+  }
+  // 新規申請 → 左リストの「勤務時間変更」を選択してフォームを表示
+  await dlg.locator('button', { hasText: '勤務時間変更' }).first().evaluate(el => el.click()).catch(() => {});
+  await sleep(2000);
+  const patVal = await dlg.locator('input[class*="FormForPattern"]').first().inputValue().catch(() => '');
+  // 申請ボタン（text完全一致で「新規申請」等を除外）
+  await dlg.locator('button:text-is("申請")').last().click({ timeout: 6000 });
+  await sleep(2000);
+  // 確認ポップアップが出た場合は OK/はい
+  for (const t of ['OK', 'はい']) {
+    const c = frame.locator(`button:text-is("${t}")`);
+    if (await c.count()) {
+      const v = c.last();
+      if (await v.isVisible().catch(() => false)) { await v.click({ timeout: 2000 }).catch(() => {}); await sleep(1000); }
+    }
+  }
+  await sleep(1000);
+  log(`  勤務時間変更を申請（パターン=${patVal || '既定'}）`);
+  // 開いたままのダイアログがあれば閉じる（キャンセル/閉じるのみ。「取消し」は押さない）
+  if (await frame.locator('[class*="daily-att-request-dialog"]').count()) {
+    await frame.locator('[class*="daily-att-request-dialog"] button:has-text("キャンセル")').last().click({ timeout: 2000 }).catch(() => {});
+    await page.keyboard.press('Escape').catch(() => {});
+    await sleep(600);
+  }
+}
+
 async function doAttendance(frame, row, day, log) {
+  // 既入力の保持: 出勤・退勤とも時刻が入っていれば触らない
+  const stCell = (await row.locator('.timesheet-pc-main-content-timesheet-daily-row__col-start-time').innerText().catch(() => '')).trim();
+  const enCell = (await row.locator('.timesheet-pc-main-content-timesheet-daily-row__col-end-time').innerText().catch(() => '')).trim();
+  if (/\d{1,2}:\d{2}/.test(stCell) && /\d{1,2}:\d{2}/.test(enCell)) {
+    log(`  出退勤は入力済み（保持: ${stCell}-${enCell}）`);
+    if (Array.isArray(day.shanai) && day.shanai.length) log('    ⚠ 社内業務指定がありますが退勤・不就労は変更しません（必要なら手動調整）');
+    return;
+  }
   await row.locator('.timesheet-pc-main-content-timesheet-daily-row__col-start-time').click({ timeout: 6000 });
   const dlg = frame.locator('[class*="ModalDialog__Dialog"]').filter({ hasText: '勤務時間入力' }).last();
   await dlg.waitFor({ state: 'visible', timeout: 8000 });
@@ -267,6 +330,12 @@ async function setShanaiKousu(frame, s, log) {
 }
 
 async function doKousu(frame, page, row, day, cfg, log) {
+  // 既入力の保持: 工数実績が既に入っている日（工数リンクに時間表示あり）は触らない
+  if (await row.locator('[data-testid="timesheet-pc__daily-summary-button__task-time"]').count()) {
+    log('  工数は入力済み（保持）');
+    if (Array.isArray(day.shanai) && day.shanai.length) log('    ⚠ 社内業務の工数が未入力の場合は手動で入力してください');
+    return;
+  }
   await row.locator('[data-testid="timesheet-pc__daily-summary-button"]').click({ timeout: 6000 });
   await sleep(3500);
   // 主ジョブ行を確保（無ければ自動追加。月替わりの受注伝票変更にも追従）
@@ -373,10 +442,17 @@ async function doKousu(frame, page, row, day, cfg, log) {
 
 async function doRowFields(frame, page, row, cfg, log) {
   const base = '.timesheet-pc-main-content-timesheet-display-field-layout-item-row';
-  if (cfg.constants.gyomuNaiyo) {
+  // 既入力の保持: 勤務場所・業務内容が両方入っていれば触らない
+  const curGyomu = await row.locator(`${base}__text input`).first().inputValue().catch(() => '');
+  const curBasho = (await row.locator(`${base}__dropdown [class*="DropdownButton__Button"]`).first().innerText().catch(() => '')).trim().split('\n')[0].trim();
+  if (curGyomu && curBasho) {
+    log(`  勤務場所/業務内容は入力済み（保持: ${curBasho} / ${curGyomu}）`);
+    return;
+  }
+  if (!curGyomu && cfg.constants.gyomuNaiyo) {
     await row.locator(`${base}__text input`).first().fill(cfg.constants.gyomuNaiyo).catch(() => {});
   }
-  if (cfg.constants.kinmuBasho) {
+  if (!curBasho && cfg.constants.kinmuBasho) {
     await row.locator(`${base}__dropdown [class*="DropdownButton__Button"]`).first().click({ timeout: 5000 }).catch(() => {});
     await sleep(900);
     const kb = cfg.constants.kinmuBasho;
@@ -401,6 +477,11 @@ async function processDays(page, days, cfg, log) {
     let row = await findRow(frame, dayNum);
     if (!row) { log('  行が見つかりません（対象月か確認）'); results.push({ date: day.date, ok: false }); continue; }
     let ok = true;
+    // 勤務時間変更申請（config で "dailyRequest": false にすると無効化できる）
+    if (cfg.dailyRequest !== false) {
+      try { await doRequest(frame, page, row, log); } catch (e) { log('  申請ERR ' + e.message); await cleanupAll(frame, page); ok = false; }
+      row = await findRow(frame, dayNum);
+    }
     try { await doAttendance(frame, row, day, log); } catch (e) { log('  出退勤ERR ' + e.message); await cleanupAll(frame, page); ok = false; }
     row = await findRow(frame, dayNum);
     try { await doKousu(frame, page, row, day, cfg, log); } catch (e) { log('  工数ERR ' + e.message); await cleanupAll(frame, page); ok = false; }
@@ -442,4 +523,4 @@ async function readCurrentSettings(page, cfg, log = () => {}) {
   return null;
 }
 
-module.exports = { launchBrowser, isLoggedIn, getFrame, processDays, readCurrentSettings, URL };
+module.exports = { launchBrowser, isLoggedIn, getFrame, processDays, readCurrentSettings, doRequest, URL };
