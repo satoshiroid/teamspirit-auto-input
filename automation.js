@@ -179,6 +179,45 @@ async function doRequest(frame, page, row, log) {
   }
 }
 
+// 社内業務を「業務後(postwork)」と「業務中(midday)」に分ける。
+//  postwork = 開始が客先退勤以降 → 労懇/代連/移動。退勤を延長し不就労(移動)を挟む。工数は客先に上乗せ。
+//  midday   = 開始が客先退勤より前 → 個人面談など。退勤は変えず、客先工数から面談分を差し引く。
+function splitSocials(day) {
+  const clientEndMin = toMin(normTime(day.end));
+  const all = (Array.isArray(day.shanai) ? [...day.shanai] : [])
+    .filter(s => s && s.job && s.start && s.end)
+    .sort((a, b) => toMin(a.start) - toMin(b.start));
+  const isPost = s => clientEndMin != null && toMin(s.start) != null && toMin(s.start) >= clientEndMin;
+  return { all, postwork: all.filter(isPost), midday: all.filter(s => !isPost(s)) };
+}
+function durMin(s) { const a = toMin(s.start), b = toMin(s.end); return (a != null && b != null) ? Math.max(0, b - a) : 0; }
+
+// 勤務時間入力ダイアログに「不就労」休憩を1つ追加する。既に同じ時間帯があればスキップ。
+async function addFusyuroBreak(dlg, frame, bStart, bEnd, log, label) {
+  bStart = normTime(bStart); bEnd = normTime(bEnd);
+  if (toMin(bStart) == null || toMin(bEnd) == null || toMin(bEnd) <= toMin(bStart)) return;
+  // 既存の休憩に同じ開始-終了があれば重複追加しない
+  const existing = await dlg.locator('input.commons-fields-att-time-field').evaluateAll(els => els.map(e => e.value)).catch(() => []);
+  for (let i = 2; i + 1 < existing.length; i += 2) {
+    if (existing[i] === bStart && existing[i + 1] === bEnd) { log(`    ${label || '不就労'} ${bStart}-${bEnd} は既に入力済み（スキップ）`); return; }
+  }
+  const before = existing.length;
+  const plusBtn = dlg.locator('[class*="RestTime__IconButton"]:has(img[src*="AAB4A"])').last();
+  if (await plusBtn.count()) await plusBtn.click({ timeout: 4000 }).catch(() => {});
+  await sleep(800);
+  const times = dlg.locator('input.commons-fields-att-time-field');
+  const tn = await times.count();
+  if (tn >= before + 2) {
+    await times.nth(tn - 2).click().catch(() => {}); await times.nth(tn - 2).fill(bStart).catch(() => {}); await times.nth(tn - 2).press('Tab').catch(() => {}); await sleep(400);
+    await times.nth(tn - 1).click().catch(() => {}); await times.nth(tn - 1).fill(bEnd).catch(() => {}); await times.nth(tn - 1).press('Tab').catch(() => {}); await sleep(400);
+    const dn = await dlg.locator('[class*="DropdownButton__Button"]').count();
+    await setBreakType(dlg, frame, dn - 1, '不就労');
+    log(`    ${label || '不就労'} ${bStart}-${bEnd} 追加`);
+  } else {
+    log(`    ⚠ ${label || '不就労'} ${bStart}-${bEnd} の追加に失敗（手動で入れてください）`);
+  }
+}
+
 async function doAttendance(frame, row, day, log) {
   // 既入力の保持: 出勤・退勤とも時刻が入っていれば触らない
   const stCell = (await row.locator('.timesheet-pc-main-content-timesheet-daily-row__col-start-time').innerText().catch(() => '')).trim();
@@ -193,10 +232,9 @@ async function doAttendance(frame, row, day, log) {
   await dlg.waitFor({ state: 'visible', timeout: 8000 });
   const st = normTime(day.start);
   const clientEnd = normTime(day.end); // 客先退勤（OCR値）
-  // 社内業務があれば 退勤=社内最終終了、無ければ客先退勤
-  const socials = (Array.isArray(day.shanai) ? [...day.shanai] : []).filter(s => s && s.start && s.end)
-    .sort((a, b) => toMin(a.start) - toMin(b.start));
-  const en = socials.length ? normTime(socials[socials.length - 1].end) : clientEnd;
+  // 業務後の社内業務(postwork)だけが退勤・不就労に影響する。業務中(個人面談等)は退勤を変えない。
+  const { postwork } = splitSocials(day);
+  const en = postwork.length ? normTime(postwork[postwork.length - 1].end) : clientEnd;
   // 出勤→Tab、退勤→Tab（最後の欄が未確定で保存される問題を防ぐ）
   let times = dlg.locator('input.commons-fields-att-time-field');
   await times.nth(0).click({ timeout: 5000 });
@@ -214,36 +252,15 @@ async function doAttendance(frame, row, day, log) {
     await dlg.locator('input.commons-fields-att-time-field').nth(1).press('Tab').catch(() => {});
     await sleep(400);
   }
-  // 社内業務あり → 客先退勤〜社内開始 を「不就労」(移動)休憩として追加
-  if (socials.length) {
+  // 業務後の社内業務あり → 客先退勤〜社内開始(移動)を「不就労」で追加。
+  // 業務中(個人面談等)は退勤も不就労も変えず、工数側で「客先から差し引き＋個人面談ジョブに計上」する。
+  if (postwork.length) {
     await sleep(800); // 自動の昼休憩が入るのを待つ
-    const travelStart = clientEnd;
-    const travelEnd = normTime(socials[0].start);
-    const alreadyHasFusyuro = await dlg.getByText('不就労', { exact: false }).count();
-    if (alreadyHasFusyuro) {
-      log('    移動(不就労)は既に入力済み（スキップ）');
-    } else if (toMin(travelEnd) != null && toMin(travelStart) != null && toMin(travelEnd) > toMin(travelStart)) {
-      const before = await dlg.locator('input.commons-fields-att-time-field').count();
-      // ＋（休憩追加）ボタンはプラス画像(AAB4A)を持つ RestTime__IconButton。indexは休憩数で変わるため画像で特定。
-      const plusBtn = dlg.locator('[class*="RestTime__IconButton"]:has(img[src*="AAB4A"])').last();
-      if (await plusBtn.count()) await plusBtn.click({ timeout: 4000 }).catch(() => {});
-      await sleep(800);
-      times = dlg.locator('input.commons-fields-att-time-field');
-      const tn = await times.count();
-      if (tn >= before + 2) {
-        await times.nth(tn - 2).click().catch(() => {}); await times.nth(tn - 2).fill(travelStart).catch(() => {}); await times.nth(tn - 2).press('Tab').catch(() => {}); await sleep(400);
-        await times.nth(tn - 1).click().catch(() => {}); await times.nth(tn - 1).fill(travelEnd).catch(() => {}); await times.nth(tn - 1).press('Tab').catch(() => {}); await sleep(400);
-        const dn = await dlg.locator('[class*="DropdownButton__Button"]').count();
-        await setBreakType(dlg, frame, dn - 1, '不就労');
-        log(`    移動(不就労) ${travelStart}-${travelEnd} 追加`);
-      } else {
-        log('    ⚠ 休憩行の追加に失敗（移動の不就労は手動で入れてください）');
-      }
-    }
+    await addFusyuroBreak(dlg, frame, clientEnd, normTime(postwork[0].start), log, '移動(不就労)');
   }
   await dlg.locator('button:text-is("保存")').click({ timeout: 6000 });
   await sleep(2500);
-  log(`  出退勤 ${st}-${en} 保存${socials.length ? '（社内業務あり）' : ''}`);
+  log(`  出退勤 ${st}-${en} 保存${postwork.length ? '（業務後の社内業務あり）' : ''}`);
 }
 
 async function pickFavorite(frame, key, code, log) {
@@ -337,17 +354,21 @@ async function setShanaiKousu(frame, s, log) {
 }
 
 async function doKousu(frame, page, row, day, cfg, log) {
-  const socialsAll = (Array.isArray(day.shanai) ? [...day.shanai] : []).filter(s => s && s.job && s.start && s.end)
-    .sort((a, b) => toMin(a.start) - toMin(b.start));
+  const { all: socialsAll, midday, postwork } = splitSocials(day);
+  // 業務中(個人面談等)の社内業務は客先工数から差し引く合計（分）
+  const middayMin = midday.reduce((s, x) => s + durMin(x), 0);
   // 既入力の保持: 工数実績が既に入っている日（工数リンクに時間表示あり）は客先分に触らない。
   // ただし社内業務の指定があれば、社内業務の工数だけ確認して欠けている分を追記する。
   if (await row.locator('[data-testid="timesheet-pc__daily-summary-button__task-time"]').count()) {
     if (!socialsAll.length) { log('  工数は入力済み（保持）'); return; }
-    log('  工数は入力済み（保持）→ 社内業務のみ確認・追記');
+    // 業務中(個人面談等)は客先工数の再計算が必要だが、既入力の客先工数は保持のため自動では下げられない。
+    if (midday.length) log(`    ⚠ 個人面談等（業務中）は客先工数を手動で ${middayMin}分 減らし、面談分を追加してください（工数入力済みのため自動調整せず）`);
+    if (!postwork.length) { log('  工数は入力済み（保持）'); return; }
+    log('  工数は入力済み（保持）→ 業務後の社内業務のみ追記');
     await row.locator('[data-testid="timesheet-pc__daily-summary-button"]').click({ timeout: 6000 });
     await sleep(3500);
     await frame.locator('[class*="TaskRowWrapper"]').first().waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
-    for (const s of socialsAll) await setShanaiKousu(frame, s, log);
+    for (const s of postwork) await setShanaiKousu(frame, s, log);
     let saved = false;
     for (let attempt = 0; attempt < 3; attempt++) {
       await frame.locator('button:has-text("保存して閉じる")').last().click({ timeout: 6000 }).catch(() => {});
@@ -371,6 +392,7 @@ async function doKousu(frame, page, row, day, cfg, log) {
     cfg.__jobMatchUpdated = true;
   }
   const jobSel = ['[class*="TaskRowWrapper"]', { hasText: jobKey }];
+  // 全社内業務を工数入力する。業務中(個人面談等)はジョブ工数に計上し、客先工数からその分を差し引く（下でmiddayMin控除）。
   const socials = socialsAll;
   const cellSel = '.task__extended__item-list__item.task-hierarchy .container';
   const nCells = await frame.locator(...jobSel).first().locator(cellSel).count();
@@ -402,6 +424,16 @@ async function doKousu(frame, page, row, day, cfg, log) {
   if (!kousu || !/\d/.test(String(kousu))) {
     const m = await frame.evaluate(() => { const w = document.body.innerText.match(/実労働時間[^\d]*(\d{1,2}:\d{2})/); return w ? w[1] : ''; }).catch(() => '');
     if (m && /\d/.test(m)) kousu = m;
+  }
+  // 業務中の社内業務(個人面談等)分を客先工数から差し引く（客先工数＋面談＝実労働 に合わせる）
+  if (middayMin > 0 && kousu && /\d/.test(String(kousu))) {
+    const km = toMin(kousu);
+    if (km != null) {
+      const adj = Math.max(0, km - middayMin);
+      const adjStr = String(Math.floor(adj / 60)).padStart(2, '0') + ':' + String(adj % 60).padStart(2, '0');
+      log(`    客先工数=${normTime(kousu)} − 業務中の社内業務${middayMin}分 → ${adjStr}`);
+      kousu = adjStr;
+    }
   }
   // 工数実績の入力。React制御のComboboxはfillでstateに反映されない端末があるため、
   // 1文字ずつ入力(pressSequentially)→Tab確定し、値を検証する。fillはフォールバック。
@@ -441,13 +473,28 @@ async function doKousu(frame, page, row, day, cfg, log) {
   for (const s of socials) {
     await setShanaiKousu(frame, s, log);
   }
-  // 保存して閉じる。「作業時間が登録されていない」警告が出たらキャンセルして時間を入れ直す
+  // 保存して閉じる。「作業時間が登録されていない」警告が出たらキャンセルして時間を入れ直す。
+  // 勤務パターン未適用などのエラーが出た場合はそれを検知して報告（誤った成功扱いを防ぐ）。
   let saved = false;
   for (let attempt = 0; attempt < 4; attempt++) {
     await frame.locator('button:has-text("保存して閉じる")').last().click({ timeout: 6000 }).catch(() => {});
     await sleep(1800);
+    // 勤務パターン未適用エラーの検知
+    const patErr = frame.getByText('勤務パターンの適用', { exact: false });
+    if (await patErr.count()) {
+      const msg = (await patErr.first().innerText().catch(() => '勤務パターン未適用')).replace(/\s+/g, ' ').trim().slice(0, 80);
+      log(`    ⚠ 保存不可: ${msg}（勤務時間変更申請でパターンを適用してください）`);
+      break;
+    }
     const warn = frame.getByText('作業時間が登録されていない', { exact: false });
-    if (!(await warn.count())) { saved = true; break; }
+    if (!(await warn.count())) {
+      // ダイアログがまだ開いている＝保存されていない可能性。工数実績サマリーの表示で確認。
+      const stillOpen = await frame.locator('button:has-text("保存して閉じる")').count();
+      saved = !stillOpen;
+      if (!saved) log('    ⚠ 保存ボタンが残っています（保存が完了していない可能性）');
+      else break;
+      break;
+    }
     log(`    警告「作業時間未登録」(${attempt + 1}回目)→ キャンセルして工数実績を再入力`);
     await frame.locator('button:has-text("キャンセル")').last().click({ timeout: 3000 }).catch(() => {});
     await sleep(1000);
@@ -457,11 +504,11 @@ async function doKousu(frame, page, row, day, cfg, log) {
     }
   }
   if (!saved) {
-    log('    ⚠ 工数実績を保存できませんでした。ダイアログを閉じます（この日は手動で工数を入力してください）');
+    log('    ⚠ 工数実績を保存できませんでした。ダイアログを閉じます（勤務パターン適用や工数を手動で確認してください）');
     await cleanupAll(frame, page);
   }
   await sleep(1500);
-  log(saved ? '  工数 保存' : '  工数 未保存（要手動）');
+  log(saved ? '  工数 保存' : '  工数 未保存（要確認）');
 }
 
 async function doRowFields(frame, page, row, cfg, log) {

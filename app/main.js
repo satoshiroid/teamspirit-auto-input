@@ -56,10 +56,13 @@ ipcMain.handle('config:get', () => loadConfig());
 ipcMain.handle('config:save', (e, cfg) => { saveConfig(cfg); return true; });
 ipcMain.handle('config:default', () => JSON.parse(fs.readFileSync(DEFAULT_CONFIG, 'utf8')));
 
-ipcMain.handle('browser:launch', async () => {
+ipcMain.handle('browser:launch', async (e, channel) => {
   if (!browserCtx) {
     const cfg = loadConfig();
-    const channels = cfg.browserChannel ? [cfg.browserChannel] : undefined; // 既定はEdge優先→Chrome
+    // 画面での選択を優先。'auto'/未指定なら Edge優先→Chrome。選択は設定に保存。
+    const pick = channel || cfg.browserChannel || 'auto';
+    if (pick !== cfg.browserChannel) { cfg.browserChannel = (pick === 'auto' ? '' : pick); saveConfig(cfg); }
+    const channels = (pick && pick !== 'auto') ? [pick] : undefined;
     const r = await automation.launchBrowser(USER_DATA(), { channels });
     browserCtx = r.context; browserPage = r.page; browserName = r.browserName;
   }

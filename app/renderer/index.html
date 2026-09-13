@@ -31,6 +31,14 @@
   .hidden { display:none; }
   #log { background:#0d1117; color:#c9d1d9; font-family:ui-monospace,monospace; font-size:12px; padding:12px; border-radius:8px; height:240px; overflow:auto; white-space:pre-wrap; }
   .hint { font-size:12px; color:var(--mut); margin-top:6px; }
+  /* セグメント型トグル */
+  .seg { position:relative; display:inline-flex; background:#eef1f4; border:1px solid var(--bd); border-radius:999px; padding:3px; user-select:none; }
+  .seg input { position:absolute; opacity:0; pointer-events:none; }
+  .seg-opt { position:relative; z-index:1; min-width:64px; text-align:center; padding:6px 16px; font-size:13px; font-weight:600; color:var(--mut); cursor:pointer; border-radius:999px; transition:color .2s ease; white-space:nowrap; }
+  .seg-thumb { position:absolute; top:3px; bottom:3px; border-radius:999px; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.18); transition:left .22s cubic-bezier(.3,.9,.4,1), width .22s cubic-bezier(.3,.9,.4,1); z-index:0; }
+  .seg-opt { min-width:80px; }
+  #br-msedge:checked ~ label[for="br-msedge"],
+  #br-chrome:checked ~ label[for="br-chrome"] { color:var(--bg); }
   h2 { font-size:15px; margin:0 0 12px; }
   .imgprev { max-width:100%; max-height:240px; border:1px solid var(--bd); border-radius:6px; margin-top:10px; }
   .pbar { height:6px; background:#e3e8ee; border-radius:4px; overflow:hidden; }
@@ -49,8 +57,19 @@
     <div class="card">
       <h2>① ツールを起動</h2>
       <p class="hint">専用ブラウザを起動します。初回はそのウィンドウで TeamSpirit にログインしてください（次回以降は不要）。</p>
+      <div class="row" style="margin-bottom:10px">
+        <span style="font-size:13px;color:var(--mut)">起動ブラウザ</span>
+        <div class="seg" id="brseg">
+          <div class="seg-thumb" id="segThumb"></div>
+          <input type="radio" name="brch" id="br-msedge" value="msedge" checked>
+          <label class="seg-opt" for="br-msedge">Edge</label>
+          <input type="radio" name="brch" id="br-chrome" value="chrome">
+          <label class="seg-opt" for="br-chrome">Chrome</label>
+        </div>
+      </div>
       <div class="row"><button id="btnLaunch" class="big">ツール起動</button>
         <button class="sec" id="btnRecheck">ログイン状態を再確認</button></div>
+      <p class="hint" id="brswHint" style="margin-top:8px">※ ブラウザごとにログインは別です。切り替えたら初回はログインが必要です。起動後の変更は「ツール起動」し直すと反映されます。</p>
     </div>
     <div class="card">
       <h2>② メニュー</h2>

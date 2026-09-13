@@ -19,9 +19,26 @@ function setStatus(launched, loggedIn, browserName){
 }
 async function refreshStatus(){ const s = await api.browserStatus(); setStatus(s.launched, s.loggedIn, s.browserName); }
 
+const getBrowserChoice = () => { const el = document.querySelector('input[name="brch"]:checked'); return el ? el.value : 'auto'; };
+function moveSegThumb(){
+  const checked = document.querySelector('input[name="brch"]:checked');
+  if(!checked) return;
+  const lbl = document.querySelector(`label[for="${checked.id}"]`);
+  const thumb = $("#segThumb");
+  if(lbl && thumb){ thumb.style.left = lbl.offsetLeft + "px"; thumb.style.width = lbl.offsetWidth + "px"; }
+}
+async function initBrowserChoice(){
+  const cfg = await api.getConfig();
+  const v = (cfg.browserChannel === 'chrome') ? 'chrome' : 'msedge'; // 既定はEdge
+  const el = document.querySelector(`input[name="brch"][value="${v}"]`) || document.querySelector('input[name="brch"][value="msedge"]');
+  if (el) el.checked = true;
+  document.querySelectorAll('input[name="brch"]').forEach(r => r.addEventListener('change', moveSegThumb));
+  requestAnimationFrame(moveSegThumb);
+}
+
 $("#btnLaunch").onclick = async () => {
   $("#btnLaunch").disabled = true; $("#statusText").textContent = "起動中…";
-  try { const r = await api.launchBrowser(); setStatus(true, r.loggedIn, r.browserName); }
+  try { const r = await api.launchBrowser(getBrowserChoice()); setStatus(true, r.loggedIn, r.browserName); }
   catch(e){ alert("起動失敗: "+e.message); }
   $("#btnLaunch").disabled = false;
 };
@@ -188,5 +205,6 @@ $("#btnStart").onclick = async () => {
 function appendLog(m){ const el=$("#log"); el.textContent += m+"\n"; el.scrollTop=el.scrollHeight; }
 api.onLog(appendLog);
 
+initBrowserChoice();
 refreshStatus();
 show("view-main");

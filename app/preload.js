@@ -4,7 +4,7 @@ contextBridge.exposeInMainWorld('api', {
   getConfig: () => ipcRenderer.invoke('config:get'),
   saveConfig: (cfg) => ipcRenderer.invoke('config:save', cfg),
   getDefault: () => ipcRenderer.invoke('config:default'),
-  launchBrowser: () => ipcRenderer.invoke('browser:launch'),
+  launchBrowser: (channel) => ipcRenderer.invoke('browser:launch', channel),
   browserStatus: () => ipcRenderer.invoke('browser:status'),
   fetchSettings: () => ipcRenderer.invoke('settings:fetch'),
   pickImage: () => ipcRenderer.invoke('ocr:pick-image'),
